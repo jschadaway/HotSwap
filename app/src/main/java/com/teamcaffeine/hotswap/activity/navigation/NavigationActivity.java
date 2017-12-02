@@ -24,7 +24,6 @@ public class NavigationActivity extends AppCompatActivity implements
 
     public BottomNavigationView navigation;
 
-    //TODO set your private fragments here
     private ListItemFragment listItemFragment;
     private InboxFragment inboxFragment;
     private ProfileFragment profileFragment;
@@ -39,17 +38,16 @@ public class NavigationActivity extends AppCompatActivity implements
         @Override
         public boolean onNavigationItemSelected(@NonNull MenuItem item) {
             switch (item.getItemId()) {
-                //TODO add a case for your fragment
-                case R.id.navigation_home:
-                    Log.i(TAG, "nav home: ");
-                    ft = fragmentManager.beginTransaction();
-                    ft.replace(R.id.dynamicContent, listItemFragment);
-                    ft.commit();
-                    return true;
                 case R.id.navigation_search:
                     Log.i(TAG, "nav search: ");
                     ft = fragmentManager.beginTransaction();
                     ft.replace(R.id.dynamicContent, searchFragment);
+                    ft.commit();
+                    return true;
+                case R.id.navigation_list:
+                    Log.i(TAG, "nav list: ");
+                    ft = fragmentManager.beginTransaction();
+                    ft.replace(R.id.dynamicContent, listItemFragment);
                     ft.commit();
                     return true;
                 case R.id.navigation_inbox:
@@ -77,7 +75,6 @@ public class NavigationActivity extends AppCompatActivity implements
         navigation = findViewById(R.id.navigation);
         navigation.setOnNavigationItemSelectedListener(mOnNavigationItemSelectedListener);
 
-        //TODO replace these with your fragments
         listItemFragment = new ListItemFragment();
         inboxFragment = new InboxFragment();
         profileFragment = new ProfileFragment();
@@ -91,6 +88,6 @@ public class NavigationActivity extends AppCompatActivity implements
                 ft.commit();
         }
 
-        navigation.setSelectedItemId(R.id.navigation_home);
+        navigation.setSelectedItemId(R.id.navigation_search);
     }
 }
