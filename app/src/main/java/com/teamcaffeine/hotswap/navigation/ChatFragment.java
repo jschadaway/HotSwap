@@ -27,11 +27,13 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 
+import com.google.common.base.Strings;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
@@ -51,7 +53,7 @@ import com.teamcaffeine.hotswap.messaging.models.Dialog;
 import com.teamcaffeine.hotswap.messaging.models.Message;
 import com.teamcaffeine.hotswap.messaging.models.SimpleMessage;
 import com.teamcaffeine.hotswap.messaging.models.Subscriptions;
-import com.teamcaffeine.hotswap.messaging.models.User;
+import com.teamcaffeine.hotswap.login.User;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -73,6 +75,7 @@ public class ChatFragment extends Fragment implements DialogsListAdapter.OnDialo
     private Handler mHandler;
     private DialogsList dialogsList;
     private ChatFragmentListener CFL;
+    private String TAG = "Chat Fragment Tag";
 
     @Nullable
     @Override
@@ -81,15 +84,20 @@ public class ChatFragment extends Fragment implements DialogsListAdapter.OnDialo
         dialogsList = (DialogsList) view.findViewById(R.id.dialogsList);
 
       /* Load Animation */
-//        progressDialog = new ProgressDialog(getActivity().getApplicationContext());
-//        progressDialog.setMessage("Loading Chat(s)...");
-//        progressDialog.show();
+        progressDialog = new ProgressDialog(getActivity());
+        progressDialog.setMessage("Loading Chat(s)...");
+        progressDialog.show();
 
         /* Load Image */
         imageLoader = new ImageLoader() {
             @Override
             public void loadImage(ImageView imageView, String url) {
-                Picasso.with(getActivity().getApplicationContext()).load(url).into(imageView);
+                // Set the url to a default picture if none exists //TODO: Decide how we wanna handle the default case, just doing so no crashes
+                if (Strings.isNullOrEmpty(url)) {
+                    Picasso.with(getActivity().getApplicationContext()).load("https://www.vccircle.com/wp-content/uploads/2017/03/default-profile.png").into(imageView);
+                } else {
+                    Picasso.with(getActivity().getApplicationContext()).load(url).into(imageView);
+                }
             }
         };
 
@@ -136,7 +144,9 @@ public class ChatFragment extends Fragment implements DialogsListAdapter.OnDialo
      */
     private void killSilently() {
         /* Remove Callbacks */
-        mHandler.removeCallbacks(mStatusChecker);
+        if (mHandler != null) {
+            mHandler.removeCallbacks(mStatusChecker);
+        }
 
         /* Online Status */
         if (null != userRef) {
@@ -157,7 +167,7 @@ public class ChatFragment extends Fragment implements DialogsListAdapter.OnDialo
         protected Void doInBackground(Void... voids) {
             for (int i = 0; i < dialogs.size(); i++) {
                 final Dialog dialog = dialogs.get(i);
-                FirebaseDatabase.getInstance().getReference().child("presence").child(dialog.getUsers().get(0).getId().replace(".", "|")).addListenerForSingleValueEvent(new ValueEventListener() {
+                FirebaseDatabase.getInstance().getReference().child("presence").child(dialog.getUsers().get(0).getEmail().replace('.','|')).addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
                     public void onDataChange(DataSnapshot dataSnapshot) {
                         if (dataSnapshot.exists()) {
@@ -165,7 +175,7 @@ public class ChatFragment extends Fragment implements DialogsListAdapter.OnDialo
                         } else {
                             dialog.getUsers().get(0).setOnline(false);
                         }
-                        getDialog(dialog.getUsers().get(0).getId(), dialog);
+                        getDialog(dialog.getUsers().get(0).getEmail(), dialog);
                     }
 
                     @Override
@@ -196,7 +206,7 @@ public class ChatFragment extends Fragment implements DialogsListAdapter.OnDialo
     public void onDialogClick(Dialog dialog) {
         Intent intent = new Intent(getActivity().getApplicationContext(), StyledMessagesActivity.class);
         intent.putExtra("channel", FirebaseAuth.getInstance().getCurrentUser().getEmail());
-        intent.putExtra("subscription", dialog.getUsers().get(0).getId());
+        intent.putExtra("subscription", dialog.getUsers().get(0).getEmail());
         startActivity(intent);
     }
 
@@ -245,9 +255,10 @@ public class ChatFragment extends Fragment implements DialogsListAdapter.OnDialo
                     mHandler = new Handler();
                     mStatusChecker.run();
 
-                    /* Dismiss Progress Dialog */
-//                    progressDialog.dismiss();
                 }
+
+                /* Dismiss Progress Dialog */
+                progressDialog.dismiss();
             }
 
             @Override
@@ -264,14 +275,21 @@ public class ChatFragment extends Fragment implements DialogsListAdapter.OnDialo
      */
     private void getDialog(final String subscriptionChannel, final Dialog originalDialog) {
         FirebaseDatabase.getInstance()
-                .getReference().child("users").orderByChild("id").equalTo(subscriptionChannel)
+                .getReference().child("users").orderByChild("email").equalTo(subscriptionChannel)
                 .limitToLast(1).addListenerForSingleValueEvent(new ValueEventListener()
         {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
                 for (DataSnapshot postSnapshot : dataSnapshot.getChildren()) {
                     final User currUser = postSnapshot.getValue(User.class);
-                    String testingSomething = FirebaseAuth.getInstance().getCurrentUser().getEmail();
+
+
+                    // Fixes logout bug
+                    Log.e(TAG, "Enter getDialog when there is no currentUser");
+                    if(FirebaseAuth.getInstance().getCurrentUser() == null) {
+                        return;
+                    }
+
                     FirebaseDatabase.getInstance()
                             .getReference().child("chats").child("active").child(subscriptionChannel.replace(".", "|")).child(FirebaseAuth.getInstance().getCurrentUser().getEmail().replace(".", "|"))
                             .orderByChild("timestamp").addListenerForSingleValueEvent(new ValueEventListener() {
@@ -292,7 +310,7 @@ public class ChatFragment extends Fragment implements DialogsListAdapter.OnDialo
                                 Dialog dialog;
                                 if (null == originalDialog) {
                                     dialog = new Dialog(
-                                            currentUser.getId(),
+                                            currentUser.getEmail(),
                                             currentUser.getName(),
                                             currentUser.getAvatar(),
                                             new ArrayList<>(Arrays.asList(currentUser)),
@@ -327,7 +345,7 @@ public class ChatFragment extends Fragment implements DialogsListAdapter.OnDialo
                                             Dialog dialog;
                                             if (null == originalDialog) {
                                                 dialog = new Dialog(
-                                                        currentUser.getId(),
+                                                        currentUser.getEmail(),
                                                         currentUser.getName(),
                                                         currentUser.getAvatar(),
                                                         new ArrayList<>(Arrays.asList(currentUser)),
@@ -369,7 +387,7 @@ public class ChatFragment extends Fragment implements DialogsListAdapter.OnDialo
                                                                         String lastMessage = "No History";
                                                                         Date lastMessageDate = new Date(0);
                                                                         Dialog dialog = new Dialog(
-                                                                                currentUser.getId(),
+                                                                                currentUser.getEmail(),
                                                                                 currentUser.getName(),
                                                                                 currentUser.getAvatar(),
                                                                                 new ArrayList<>(Arrays.asList(currentUser)),
@@ -453,7 +471,7 @@ public class ChatFragment extends Fragment implements DialogsListAdapter.OnDialo
                     Dialog dialog;
                     if (null == originalDialog) {
                         dialog = new Dialog(
-                                currentUser.getId(),
+                                currentUser.getEmail(),
                                 currentUser.getName(),
                                 currentUser.getAvatar(),
                                 new ArrayList<>(Arrays.asList(currentUser)),

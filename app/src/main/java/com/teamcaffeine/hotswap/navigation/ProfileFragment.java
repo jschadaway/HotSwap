@@ -11,6 +11,7 @@ import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
+import android.support.v4.app.FragmentTransaction;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -27,11 +28,6 @@ import android.widget.Toast;
 import com.facebook.share.model.ShareLinkContent;
 import com.facebook.share.widget.ShareDialog;
 import com.firebase.ui.auth.AuthUI;
-import com.google.android.gms.common.GooglePlayServicesNotAvailableException;
-import com.google.android.gms.common.GooglePlayServicesRepairableException;
-import com.google.android.gms.common.api.Status;
-import com.google.android.gms.location.places.Place;
-import com.google.android.gms.location.places.ui.PlaceAutocomplete;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.FirebaseAuth;
@@ -40,9 +36,9 @@ import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
-import com.google.firebase.database.Query;
 import com.google.firebase.database.ValueEventListener;
-import com.google.firebase.database.ValueEventListener;
+import com.stripe.android.model.Card;
+import com.stripe.android.view.CardMultilineWidget;
 import com.teamcaffeine.hotswap.R;
 import com.teamcaffeine.hotswap.login.LoginActivity;
 import com.teamcaffeine.hotswap.login.User;
@@ -51,11 +47,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
-import static android.app.Activity.RESULT_CANCELED;
-import static android.app.Activity.RESULT_OK;
-
-import com.teamcaffeine.hotswap.login.User;
 
 /**
  * A simple {@link Fragment} subclass.
@@ -74,13 +65,13 @@ public class ProfileFragment extends Fragment {
     private Button btnInviteFriends;
     private TextView txtEmail;
     private TextView txtPhoneNumber;
-    private Button btnAddAddress;
-    private ListView listviewAddresses;
-    private List<String> addressElementsList;
-    private ArrayAdapter<String> addressAdapter;
-    private TextView txtAddPayment;
+    private Button btnAddPayment;
+    private ListView listviewPayment;
+    private List<String> paymentElementsList;
+    private ArrayAdapter<String> paymentAdapter;
     private TextView txtPastTransactions;
 
+    // Progress dialog, to show page is loading
     public ProgressDialog mProgressDialog;
 
     // Database reference fields
@@ -89,7 +80,7 @@ public class ProfileFragment extends Fragment {
     private DatabaseReference users;
     private String userTable = "users";
 
-
+    // progress dialog to show page is loading
     public void showProgressDialog() {
         if (mProgressDialog == null) {
             mProgressDialog = new ProgressDialog(getContext());
@@ -97,15 +88,18 @@ public class ProfileFragment extends Fragment {
             mProgressDialog.setIndeterminate(true);
         }
 
+        // show progress dialog to indicate to user that the page is loading
         mProgressDialog.show();
     }
 
+    // hide progress dialog when page shows
     public void hideProgressDialog() {
         if (mProgressDialog != null && mProgressDialog.isShowing()) {
             mProgressDialog.dismiss();
         }
     }
 
+    // fragment listener for inter-fragment communication
     ProfileFragmentListener PFL;
 
     public ProfileFragment() {
@@ -121,102 +115,63 @@ public class ProfileFragment extends Fragment {
     }
 
     @Override
-    public void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == PLACE_AUTOCOMPLETE_REQUEST_CODE) {
-            if (resultCode == RESULT_OK) {
-                final Place place = PlaceAutocomplete.getPlace(getActivity(), data);
-
-                DatabaseReference ref = users.child(firebaseUser.getUid());
-                ref.addListenerForSingleValueEvent(new ValueEventListener() {
-                    @Override
-                    public void onDataChange(DataSnapshot dataSnapshot) {
-                        User user = dataSnapshot.getValue(User.class);
-
-                        boolean didAdd = user.addAddress(place.getAddress().toString());
-                        if (didAdd) {
-                            // Update database
-                            Map<String, Object> userUpdate = new HashMap<>();
-                            userUpdate.put(firebaseUser.getUid(), user.toMap());
-                            users.updateChildren(userUpdate);
-
-                            // Update UI
-                            addressElementsList.add(place.getAddress().toString());
-                        } else {
-                            Log.i(TAG, "User attempted to add a duplicate address");
-                        }
-                    }
-
-                    @Override
-                    public void onCancelled(DatabaseError databaseError) {
-                        Log.e(TAG, "Address update failed", databaseError.toException());
-                    }
-                });
-            } else if (resultCode == PlaceAutocomplete.RESULT_ERROR) {
-                Status status = PlaceAutocomplete.getStatus(getActivity(), data);
-                Log.i(TAG, status.getStatusMessage());
-                Toast.makeText(getContext(), R.string.unable_to_add_address, Toast.LENGTH_SHORT).show();
-            } else if (resultCode == RESULT_CANCELED) {
-                // The user canceled the operation.
-            }
-        }
-    }
-
-    @Override
     public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        btnAddAddress = view.findViewById(R.id.txtAddAddress);
-        btnAddAddress.setOnClickListener(new View.OnClickListener() {
+        // populate the listview with the user's addresses
+        // step 1: instantiate the Address Fragment
+        AddressesFragment addressesFragment = new AddressesFragment();
+        // step 2: begin the fragment transaction
+        FragmentTransaction ft = getFragmentManager().beginTransaction();
+        // step 3: add fragment to the activity state
+        ft.add(R.id.layout_Addresses, addressesFragment);
+        // stap 4: commit the transaction
+        ft.commit();
+
+        btnAddPayment = view.findViewById(R.id.btnAddPayment);
+        btnAddPayment.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                try {
-                    Intent intent =
-                            new PlaceAutocomplete.IntentBuilder(PlaceAutocomplete.MODE_FULLSCREEN)
-                                    .build(getActivity());
-                    startActivityForResult(intent, PLACE_AUTOCOMPLETE_REQUEST_CODE);
-                } catch (GooglePlayServicesRepairableException | GooglePlayServicesNotAvailableException e) {
-                    Log.e(TAG, "Google Places Error", e);
-                }
+                addPaymentPopup();
             }
         });
 
-        listviewAddresses = view.findViewById(R.id.listviewAddresses);
-        listviewAddresses.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+        paymentElementsList = new ArrayList<String>();
+        listviewPayment = view.findViewById(R.id.listviewPayment);
+        listviewPayment.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, final int position, long id) {
                 AlertDialog myQuittingDialogBox = new AlertDialog.Builder(getContext())
                         //set message, title, and icon
                         .setTitle(R.string.delete)
-                        .setMessage(R.string.delete_address_question)
+                        .setMessage(R.string.delete_payment_question)
                         .setPositiveButton(R.string.delete, new DialogInterface.OnClickListener() {
 
                             public void onClick(DialogInterface dialog, int whichButton) {
-
                                 DatabaseReference ref = users.child(firebaseUser.getUid());
                                 ref.addListenerForSingleValueEvent(new ValueEventListener() {
                                     @Override
                                     public void onDataChange(DataSnapshot dataSnapshot) {
                                         User user = dataSnapshot.getValue(User.class);
 
-                                        boolean didRemove = user.removeAddress(listviewAddresses.getItemAtPosition(position).toString());
+                                        boolean didRemove = user.removePayment(listviewPayment.getItemAtPosition(position).toString());
                                         if (didRemove) {
                                             // Update database
                                             Map<String, Object> userUpdate = new HashMap<>();
                                             userUpdate.put(firebaseUser.getUid(), user.toMap());
                                             users.updateChildren(userUpdate);
 
-                                            // Update UI
-                                            addressElementsList.remove(position);
-                                            addressAdapter.notifyDataSetChanged();
+                                            // tell user card deleted
+                                            Toast.makeText(getContext(), "Card Deleted", Toast.LENGTH_SHORT).show();
+
                                         } else {
-                                            Log.i(TAG, "User attempted to delete a nonexistent address");
+                                            Log.i(TAG, "User attempted to delete a nonexistent payment method");
                                         }
                                     }
 
                                     @Override
                                     public void onCancelled(DatabaseError databaseError) {
-                                        Log.e(TAG, "Address update failed", databaseError.toException());
+                                        Log.e(TAG, "Payment update failed", databaseError.toException());
                                     }
                                 });
                                 dialog.dismiss();
@@ -232,26 +187,12 @@ public class ProfileFragment extends Fragment {
             }
         });
 
-        addressElementsList = new ArrayList<String>();
-        addressAdapter = new ArrayAdapter<String>
-                (getContext(), android.R.layout.simple_list_item_1, addressElementsList);
-        listviewAddresses.setAdapter(addressAdapter);
 
-        txtAddPayment = view.findViewById(R.id.txtAddPayment);
-        txtAddPayment.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                addPaymentPopup();
-            }
-        });
+        paymentAdapter = new ArrayAdapter<String>
+                (getContext(), android.R.layout.simple_list_item_1, paymentElementsList);
+        listviewPayment.setAdapter(paymentAdapter);
+
         txtPastTransactions = view.findViewById(R.id.txtPastTransactions);
-
-        // get the bundle from the intent
-        //****keeping these lines commented out for now, we will need them when we implement the fragment with login
-//        Bundle bundle = getIntent().getExtras();
-//        String fullName = bundle.getString("fullName");
-//        String dateCreated = bundle.getString("dateCreated");
-
         txtName = view.findViewById(R.id.txtName);
         txtMemberSince = view.findViewById(R.id.txtMemberSince);
         btnLogout = view.findViewById(R.id.btnLogout);
@@ -278,13 +219,16 @@ public class ProfileFragment extends Fragment {
                 txtEmail.setText(user.getEmail());
                 txtPhoneNumber.setText(user.getPhoneNumber());
 
-                addressElementsList = user.getAddresses();
-                addressAdapter.notifyDataSetChanged();
+                paymentElementsList = user.getPayments();
+                paymentAdapter = new ArrayAdapter<String>
+                        (getContext(), android.R.layout.simple_list_item_1, paymentElementsList);
+                listviewPayment.setAdapter(paymentAdapter);
+                paymentAdapter.notifyDataSetChanged();
             }
 
             @Override
             public void onCancelled(DatabaseError databaseError) {
-                System.out.println("The read failed: " + databaseError.getCode());
+                Log.e(TAG, "The read failed:", databaseError.toException());
             }
         });
 
@@ -399,6 +343,51 @@ public class ProfileFragment extends Fragment {
         final PopupWindow popupWindow = new PopupWindow(popupView, 800, 800, true);
         popupWindow.setOutsideTouchable(true);
         popupWindow.setAnimationStyle(R.style.PopupAnimation);
+
+        final CardMultilineWidget mCardMultilineWidget = popupView.findViewById(R.id.card_multiline_widget);
+
+        Button btnAddCard = (Button) popupView.findViewById(R.id.btnAddCard);
+        btnAddCard.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                final Card cardToSave = mCardMultilineWidget.getCard();
+                if (cardToSave == null) {
+                    Log.i(TAG, "User attempted to add an invalid payment");
+                } else {
+
+                    DatabaseReference ref = users.child(firebaseUser.getUid());
+                    ref.addListenerForSingleValueEvent(new ValueEventListener() {
+                        @Override
+                        public void onDataChange(DataSnapshot dataSnapshot) {
+                            User user = dataSnapshot.getValue(User.class);
+
+                            boolean didAdd = user.addPayment(cardToSave.getNumber());
+                            if (didAdd) {
+                                // Update database
+                                Map<String, Object> userUpdate = new HashMap<>();
+                                userUpdate.put(firebaseUser.getUid(), user.toMap());
+                                users.updateChildren(userUpdate);
+
+                                // tell user card was successfully added
+                                Toast.makeText(getContext(), "Card Added", Toast.LENGTH_SHORT).show();
+                                popupWindow.dismiss();
+
+                            } else {
+                                Log.i(TAG, "User attempted to add a duplicate payment");
+                                Toast.makeText(getContext(), "Cannot add a duplicate card", Toast.LENGTH_LONG).show();
+                            }
+                        }
+
+                        @Override
+                        public void onCancelled(DatabaseError databaseError) {
+                            Log.e(TAG, "Payments update failed", databaseError.toException());
+                        }
+                    });
+                    //TODO: add info to Stripe database
+                }
+            }
+        });
+
 
         // define view buttons
         Button btnClosePopUp = (Button) popupView.findViewById(R.id.btnClose);
